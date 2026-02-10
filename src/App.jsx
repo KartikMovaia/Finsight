@@ -1,4 +1,13 @@
 import { useState, useMemo, useEffect } from "react";
+import AuthGate from "./AuthGate";
+import {
+  loadTransactions, saveTransactions,
+  loadInvestments, saveInvestments,
+  loadDebts, saveDebts,
+  loadSettings, saveSettings,
+  exportAllData, importAllData,
+  clearAllData as clearAllFirebase,
+} from "./dataService";
 
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Investments", "Side Hustle", "Gifts", "Other Income"],
@@ -196,59 +205,6 @@ function ProjectionChart({ monthlyData, projectionMonths = 6 }) {
 }
 
 const PALETTE = ["#a78bfa", "#f472b6", "#38bdf8", "#22c55e", "#facc15", "#fb923c", "#e879f9", "#34d399", "#f87171", "#818cf8"];
-
-// ─── Storage helpers ───
-const STORAGE_KEY = "finsight-transactions";
-const SETTINGS_KEY = "finsight-settings";
-const AUTH_KEY = "finsight-auth";
-const SESSION_KEY = "finsight-session";
-const INVESTMENTS_KEY = "finsight-investments";
-const DEBTS_KEY = "finsight-debts";
-
-// Simple hash for PIN/password (not cryptographic, but sufficient for client-side single-user)
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + ch;
-    hash |= 0;
-  }
-  return "h_" + Math.abs(hash).toString(36) + "_" + str.length;
-}
-
-// ─── localStorage-based storage (async interface for compatibility) ───
-function storageGet(key) {
-  try {
-    const val = localStorage.getItem(key);
-    return val ? JSON.parse(val) : null;
-  } catch { return null; }
-}
-
-function storageSet(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-    return true;
-  } catch { return false; }
-}
-
-function storageDelete(key) {
-  try { localStorage.removeItem(key); } catch {}
-}
-
-async function loadAuth() { return storageGet(AUTH_KEY); }
-async function saveAuth(auth) { return storageSet(AUTH_KEY, auth); }
-async function loadSession() { return storageGet(SESSION_KEY); }
-async function saveSession(session) { return storageSet(SESSION_KEY, session); }
-async function clearSession() { storageDelete(SESSION_KEY); }
-async function loadTransactions() { return storageGet(STORAGE_KEY); }
-async function saveTransactions(txns) { return storageSet(STORAGE_KEY, txns); }
-async function loadSettings() { return storageGet(SETTINGS_KEY); }
-async function saveSettings(settings) { return storageSet(SETTINGS_KEY, settings); }
-async function loadInvestments() { return storageGet(INVESTMENTS_KEY); }
-async function saveInvestments(data) { return storageSet(INVESTMENTS_KEY, data); }
-async function loadDebts() { return storageGet(DEBTS_KEY); }
-async function saveDebts(data) { return storageSet(DEBTS_KEY, data); }
-
 const INVESTMENT_TYPES = ["Stocks", "ETFs", "Bonds", "Crypto", "Real Estate", "Mutual Funds", "Commodities", "Other"];
 const INVESTMENT_ICONS = { Stocks: "📊", ETFs: "📈", Bonds: "🏛️", Crypto: "₿", "Real Estate": "🏘️", "Mutual Funds": "📋", Commodities: "🪙", Other: "💼" };
 
@@ -269,417 +225,15 @@ const SAMPLE_DEBTS = [
   { id: generateId(), name: "Toyota Financing", type: "Car Loan", balance: 14200, interestRate: 5.49, minimumPayment: 385, creditLimit: null, dueDate: "2026-02-20", note: "2024 Camry" },
 ];
 
-// ─── Auth Gate Component ───
-function AuthGate({ children }) {
-  const [authState, setAuthState] = useState("checking"); // checking, setup, login, authenticated
-  const [authData, setAuthData] = useState(null);
-  const [name, setName] = useState("");
-  const [pin, setPin] = useState("");
-  const [pinConfirm, setPinConfirm] = useState("");
-  const [loginPin, setLoginPin] = useState("");
-  const [error, setError] = useState("");
-  const [attempts, setAttempts] = useState(0);
-  const [lockUntil, setLockUntil] = useState(0);
-  const [showPin, setShowPin] = useState(false);
-  const [showChangePin, setShowChangePin] = useState(false);
-  const [oldPin, setOldPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [newPinConfirm, setNewPinConfirm] = useState("");
-  const [changePinMsg, setChangePinMsg] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      const auth = await loadAuth();
-      if (auth && auth.pinHash) {
-        setAuthData(auth);
-        // Check for existing session
-        const session = await loadSession();
-        const now = Date.now();
-        if (session && session.valid && session.expiresAt > now) {
-          setAuthState("authenticated");
-        } else {
-          setAuthState("login");
-        }
-      } else {
-        setAuthState("setup");
-      }
-    })();
-  }, []);
-
-  const handleSetup = async () => {
-    setError("");
-    if (!name.trim()) { setError("Please enter your name"); return; }
-    if (pin.length < 4) { setError("PIN must be at least 4 digits"); return; }
-    if (pin !== pinConfirm) { setError("PINs don't match"); return; }
-    if (!/^\d+$/.test(pin)) { setError("PIN must be numbers only"); return; }
-    const auth = {
-      name: name.trim(),
-      pinHash: simpleHash(pin),
-      createdAt: new Date().toISOString(),
-    };
-    await saveAuth(auth);
-    setAuthData(auth);
-    // Create session (24 hours)
-    await saveSession({ valid: true, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
-    setAuthState("authenticated");
-  };
-
-  const handleLogin = async () => {
-    setError("");
-    const now = Date.now();
-    if (lockUntil > now) {
-      const secs = Math.ceil((lockUntil - now) / 1000);
-      setError(`Too many attempts. Try again in ${secs}s`);
-      return;
-    }
-    if (simpleHash(loginPin) === authData.pinHash) {
-      setAttempts(0);
-      await saveSession({ valid: true, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
-      setAuthState("authenticated");
-    } else {
-      const newAttempts = attempts + 1;
-      setAttempts(newAttempts);
-      if (newAttempts >= 5) {
-        setLockUntil(now + 60000); // 1 min lockout
-        setError("Too many failed attempts. Locked for 60 seconds.");
-        setAttempts(0);
-      } else {
-        setError(`Incorrect PIN (${5 - newAttempts} attempts remaining)`);
-      }
-      setLoginPin("");
-    }
-  };
-
-  const handleLogout = async () => {
-    await clearSession();
-    setLoginPin("");
-    setAuthState("login");
-  };
-
-  const handleChangePin = async () => {
-    setChangePinMsg("");
-    if (simpleHash(oldPin) !== authData.pinHash) { setChangePinMsg("Current PIN is incorrect"); return; }
-    if (newPin.length < 4) { setChangePinMsg("New PIN must be at least 4 digits"); return; }
-    if (!/^\d+$/.test(newPin)) { setChangePinMsg("PIN must be numbers only"); return; }
-    if (newPin !== newPinConfirm) { setChangePinMsg("New PINs don't match"); return; }
-    const updated = { ...authData, pinHash: simpleHash(newPin) };
-    await saveAuth(updated);
-    setAuthData(updated);
-    setOldPin(""); setNewPin(""); setNewPinConfirm("");
-    setChangePinMsg("PIN updated successfully!");
-    setShowChangePin(false);
-  };
-
-  const handleDeleteAccount = async () => {
-    if (confirm("Delete your account? This removes your login but keeps your financial data.")) {
-      try { storageDelete(AUTH_KEY); } catch {}
-      try { storageDelete(SESSION_KEY); } catch {}
-      setAuthData(null); setAuthState("setup");
-      setName(""); setPin(""); setPinConfirm("");
-    }
-  };
-
-  // Lock timer countdown
-  useEffect(() => {
-    if (lockUntil <= Date.now()) return;
-    const interval = setInterval(() => {
-      const now = Date.now();
-      if (lockUntil <= now) {
-        setError(""); clearInterval(interval);
-      } else {
-        const secs = Math.ceil((lockUntil - now) / 1000);
-        setError(`Locked out. Try again in ${secs}s`);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [lockUntil]);
-
-  const bgStyle = {
-    minHeight: "100vh",
-    background: "linear-gradient(145deg, #0a0a0f 0%, #0d0d1a 30%, #111127 60%, #0a0a0f 100%)",
-    color: "#fff",
-    fontFamily: "'DM Sans', sans-serif",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    position: "relative", overflow: "hidden",
-  };
-
-  const cardBase = {
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 24, padding: 36, width: "100%", maxWidth: 400,
-    backdropFilter: "blur(20px)", position: "relative", zIndex: 1,
-  };
-
-  const inputStyle = {
-    width: "100%", boxSizing: "border-box",
-    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 15,
-    fontFamily: "'DM Sans', sans-serif", outline: "none",
-    transition: "border-color 0.2s",
-  };
-
-  const pinInputStyle = {
-    ...inputStyle,
-    fontSize: 24, fontWeight: 700, letterSpacing: "0.3em", textAlign: "center",
-    fontFamily: "'Space Mono', monospace",
-  };
-
-  const btnStyle = {
-    width: "100%", padding: "14px 0", border: "none", borderRadius: 14,
-    cursor: "pointer", fontWeight: 700, fontSize: 15,
-    fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s",
-    background: "linear-gradient(135deg, #a78bfa, #818cf8)",
-    color: "#fff", boxShadow: "0 4px 20px rgba(167,139,250,0.3)",
-  };
-
-  const labelStyle = {
-    fontSize: 11, color: "rgba(255,255,255,0.4)", display: "block",
-    marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em",
-    fontWeight: 500,
-  };
-
-  if (authState === "checking") {
-    return (
-      <div style={bgStyle}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-        <div style={{ textAlign: "center" }}>
-          <div style={{
-            width: 48, height: 48, border: "3px solid rgba(167,139,250,0.15)",
-            borderTopColor: "#a78bfa", borderRadius: "50%",
-            animation: "spin 0.8s linear infinite", margin: "0 auto 16px",
-          }} />
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)" }}>Checking authentication…</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Setup Screen (first time) ───
-  if (authState === "setup") {
-    return (
-      <div style={bgStyle}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-        <div style={{ position: "fixed", top: -200, right: -200, width: 500, height: 500, background: "radial-gradient(circle, rgba(167,139,250,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "fixed", bottom: -150, left: -150, width: 400, height: 400, background: "radial-gradient(circle, rgba(56,189,248,0.06) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={cardBase}>
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(129,140,248,0.2))",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 26, border: "1px solid rgba(167,139,250,0.2)",
-            }}>💎</div>
-            <h1 style={{
-              fontSize: 28, fontWeight: 700, margin: "0 0 4px", letterSpacing: "-0.02em",
-              background: "linear-gradient(135deg, #fff 30%, #a78bfa)",
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-            }}>Welcome to Finsight</h1>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", margin: 0 }}>
-              Create your account to get started
-            </p>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Your Name</label>
-              <input
-                type="text" placeholder="Enter your name" value={name}
-                onChange={e => setName(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && document.getElementById("setup-pin")?.focus()}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Create a PIN</label>
-              <input
-                id="setup-pin"
-                type={showPin ? "text" : "password"} inputMode="numeric" pattern="[0-9]*"
-                placeholder="••••" value={pin} maxLength={8}
-                onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={e => e.key === "Enter" && document.getElementById("setup-pin-confirm")?.focus()}
-                style={pinInputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Confirm PIN</label>
-              <input
-                id="setup-pin-confirm"
-                type={showPin ? "text" : "password"} inputMode="numeric" pattern="[0-9]*"
-                placeholder="••••" value={pinConfirm} maxLength={8}
-                onChange={e => setPinConfirm(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={e => e.key === "Enter" && handleSetup()}
-                style={pinInputStyle}
-              />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => setShowPin(!showPin)} style={{
-                background: "none", border: "none", color: "rgba(255,255,255,0.35)",
-                cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: 0,
-              }}>{showPin ? "🙈 Hide PIN" : "👁 Show PIN"}</button>
-            </div>
-            {error && (
-              <div style={{
-                background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-                borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#f87171",
-              }}>{error}</div>
-            )}
-            <button onClick={handleSetup} style={btnStyle}>Create Account</button>
-          </div>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 16, lineHeight: 1.5 }}>
-            Your PIN protects access to your financial data.<br />It's stored securely on this device.
-          </p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } } input::placeholder { color: rgba(255,255,255,0.2); }`}</style>
-      </div>
-    );
-  }
-
-  // ─── Login Screen ───
-  if (authState === "login") {
-    return (
-      <div style={bgStyle}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-        <div style={{ position: "fixed", top: -200, right: -200, width: 500, height: 500, background: "radial-gradient(circle, rgba(167,139,250,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "fixed", bottom: -150, left: -150, width: 400, height: 400, background: "radial-gradient(circle, rgba(56,189,248,0.06) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={cardBase}>
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px",
-              background: "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(129,140,248,0.2))",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 26, border: "1px solid rgba(167,139,250,0.2)",
-            }}>🔐</div>
-            <h1 style={{
-              fontSize: 24, fontWeight: 700, margin: "0 0 4px", letterSpacing: "-0.02em",
-            }}>Welcome back{authData?.name ? `, ${authData.name}` : ""}</h1>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", margin: 0 }}>
-              Enter your PIN to unlock
-            </p>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <input
-                type={showPin ? "text" : "password"} inputMode="numeric" pattern="[0-9]*"
-                placeholder="••••" value={loginPin} maxLength={8} autoFocus
-                onChange={e => setLoginPin(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-                style={{
-                  ...pinInputStyle,
-                  borderColor: error ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)",
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <button onClick={() => setShowPin(!showPin)} style={{
-                background: "none", border: "none", color: "rgba(255,255,255,0.35)",
-                cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: 0,
-              }}>{showPin ? "🙈 Hide" : "👁 Show"}</button>
-            </div>
-            {error && (
-              <div style={{
-                background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-                borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#f87171",
-                animation: "shake 0.4s ease",
-              }}>{error}</div>
-            )}
-            <button
-              onClick={handleLogin}
-              disabled={lockUntil > Date.now()}
-              style={{
-                ...btnStyle,
-                opacity: lockUntil > Date.now() ? 0.4 : 1,
-                cursor: lockUntil > Date.now() ? "not-allowed" : "pointer",
-              }}
-            >Unlock</button>
-          </div>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 20 }}>
-            <button onClick={handleDeleteAccount} style={{
-              background: "none", border: "none", color: "rgba(239,68,68,0.5)",
-              cursor: "pointer", fontSize: 11, fontFamily: "'DM Sans', sans-serif", padding: 0,
-              textDecoration: "underline", textUnderlineOffset: 2,
-            }}>Reset account</button>
-          </p>
-        </div>
-        <style>{`
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
-          input::placeholder { color: rgba(255,255,255,0.2); }
-        `}</style>
-      </div>
-    );
-  }
-
-  // ─── Authenticated: render children with auth context ───
-  return children({
-    user: authData,
-    onLogout: handleLogout,
-    onChangePin: () => setShowChangePin(true),
-    onDeleteAccount: handleDeleteAccount,
-    changePinModal: showChangePin ? (
-      <div style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200,
-      }} onClick={() => { setShowChangePin(false); setChangePinMsg(""); setOldPin(""); setNewPin(""); setNewPinConfirm(""); }}>
-        <div onClick={e => e.stopPropagation()} style={{
-          ...cardBase, maxWidth: 380, padding: 28,
-          background: "linear-gradient(180deg, #1a1a2e, #0f0f1a)",
-        }}>
-          <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700 }}>Change PIN</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Current PIN</label>
-              <input type="password" inputMode="numeric" placeholder="••••" value={oldPin} maxLength={8}
-                onChange={e => setOldPin(e.target.value.replace(/\D/g, ""))} style={pinInputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>New PIN</label>
-              <input type="password" inputMode="numeric" placeholder="••••" value={newPin} maxLength={8}
-                onChange={e => setNewPin(e.target.value.replace(/\D/g, ""))} style={pinInputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Confirm New PIN</label>
-              <input type="password" inputMode="numeric" placeholder="••••" value={newPinConfirm} maxLength={8}
-                onChange={e => setNewPinConfirm(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={e => e.key === "Enter" && handleChangePin()}
-                style={pinInputStyle} />
-            </div>
-            {changePinMsg && (
-              <div style={{
-                background: changePinMsg.includes("success") ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-                border: `1px solid ${changePinMsg.includes("success") ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`,
-                borderRadius: 10, padding: "10px 14px", fontSize: 13,
-                color: changePinMsg.includes("success") ? "#22c55e" : "#f87171",
-              }}>{changePinMsg}</div>
-            )}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setShowChangePin(false); setChangePinMsg(""); setOldPin(""); setNewPin(""); setNewPinConfirm(""); }} style={{
-                flex: 1, padding: "12px 0", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12,
-                background: "transparent", color: "rgba(255,255,255,0.5)", cursor: "pointer",
-                fontWeight: 600, fontSize: 14, fontFamily: "'DM Sans', sans-serif",
-              }}>Cancel</button>
-              <button onClick={handleChangePin} style={{ ...btnStyle, flex: 1, padding: "12px 0", fontSize: 14 }}>
-                Update PIN
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    ) : null,
-  });
-}
-
 // ─── Sync status badge ───
 function SyncBadge({ status }) {
   const config = {
     loading: { color: "#facc15", label: "Loading…", icon: "◌" },
-    saved: { color: "#22c55e", label: "Saved", icon: "✓" },
-    saving: { color: "#a78bfa", label: "Saving…", icon: "↻" },
-    error: { color: "#ef4444", label: "Unsaved", icon: "!" },
-    offline: { color: "rgba(255,255,255,0.25)", label: "Local only", icon: "○" },
+    saved: { color: "#22c55e", label: "Synced", icon: "✓" },
+    saving: { color: "#a78bfa", label: "Syncing…", icon: "↻" },
+    error: { color: "#ef4444", label: "Error", icon: "!" },
   };
-  const c = config[status] || config.offline;
+  const c = config[status] || config.saved;
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
@@ -691,16 +245,16 @@ function SyncBadge({ status }) {
   );
 }
 
-// ─── Main App with Auth wrapper ───
+// ─── Main export with Auth wrapper ───
 export default function App() {
   return (
     <AuthGate>
-      {(authProps) => <FinanceTracker {...authProps} />}
+      {({ user, onLogout }) => <FinanceTracker user={user} onLogout={onLogout} />}
     </AuthGate>
   );
 }
 
-function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePinModal }) {
+function FinanceTracker({ user, onLogout }) {
   const [transactions, setTransactions] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [debts, setDebts] = useState([]);
@@ -724,31 +278,33 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
   const [editingDebtId, setEditingDebtId] = useState(null);
   const [newDebt, setNewDebt] = useState({ name: "", type: "", balance: "", interestRate: "", minimumPayment: "", creditLimit: "", dueDate: "", note: "" });
 
-  // ─── Load from storage on mount ───
+  const uid = user.uid;
+
+  // ─── Load from Firebase on mount ───
   useEffect(() => {
     (async () => {
-      const stored = await loadTransactions();
+      const stored = await loadTransactions(uid);
       if (stored && stored.length > 0) {
         setTransactions(stored);
       } else {
         setTransactions(SAMPLE_DATA);
-        await saveTransactions(SAMPLE_DATA);
+        await saveTransactions(uid, SAMPLE_DATA);
       }
-      const storedInv = await loadInvestments();
+      const storedInv = await loadInvestments(uid);
       if (storedInv && storedInv.length > 0) {
         setInvestments(storedInv);
       } else {
         setInvestments(SAMPLE_INVESTMENTS);
-        await saveInvestments(SAMPLE_INVESTMENTS);
+        await saveInvestments(uid, SAMPLE_INVESTMENTS);
       }
-      const storedDebt = await loadDebts();
+      const storedDebt = await loadDebts(uid);
       if (storedDebt && storedDebt.length > 0) {
         setDebts(storedDebt);
       } else {
         setDebts(SAMPLE_DEBTS);
-        await saveDebts(SAMPLE_DEBTS);
+        await saveDebts(uid, SAMPLE_DEBTS);
       }
-      const settings = await loadSettings();
+      const settings = await loadSettings(uid);
       if (settings) {
         if (settings.view) setView(settings.view);
         if (settings.activeTab) setActiveTab(settings.activeTab);
@@ -756,42 +312,42 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
       setSyncStatus("saved");
       setIsLoaded(true);
     })();
-  }, []);
+  }, [uid]);
 
-  // ─── Auto-save whenever transactions change (after initial load) ───
+  // ─── Auto-save transactions to Firebase ───
   useEffect(() => {
     if (!isLoaded) return;
     let cancelled = false;
     setSyncStatus("saving");
     const timer = setTimeout(async () => {
-      const ok = await saveTransactions(transactions);
+      const ok = await saveTransactions(uid, transactions);
       if (!cancelled) setSyncStatus(ok ? "saved" : "error");
-    }, 300);
+    }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [transactions, isLoaded]);
+  }, [transactions, isLoaded, uid]);
 
   // ─── Auto-save investments ───
   useEffect(() => {
     if (!isLoaded) return;
-    const timer = setTimeout(async () => { await saveInvestments(investments); }, 300);
+    const timer = setTimeout(() => { saveInvestments(uid, investments); }, 500);
     return () => clearTimeout(timer);
-  }, [investments, isLoaded]);
+  }, [investments, isLoaded, uid]);
 
   // ─── Auto-save debts ───
   useEffect(() => {
     if (!isLoaded) return;
-    const timer = setTimeout(async () => { await saveDebts(debts); }, 300);
+    const timer = setTimeout(() => { saveDebts(uid, debts); }, 500);
     return () => clearTimeout(timer);
-  }, [debts, isLoaded]);
+  }, [debts, isLoaded, uid]);
 
   // ─── Save view/tab settings periodically ───
   useEffect(() => {
     if (!isLoaded) return;
     const timer = setTimeout(() => {
-      saveSettings({ view, activeTab });
+      saveSettings(uid, { view, activeTab });
     }, 500);
     return () => clearTimeout(timer);
-  }, [view, activeTab, isLoaded]);
+  }, [view, activeTab, isLoaded, uid]);
 
   // ─── Investment CRUD ───
   const addInvestment = () => {
@@ -866,8 +422,9 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
   }, [portfolioStats, debtStats]);
 
   // ─── Data management functions ───
-  const exportData = () => {
-    const blob = new Blob([JSON.stringify({ transactions, investments, debts }, null, 2)], { type: "application/json" });
+  const exportData = async () => {
+    const data = await exportAllData(uid);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `finsight-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -882,12 +439,14 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
       try {
         const text = await e.target.files[0].text();
         const data = JSON.parse(text);
-        if (data.transactions && Array.isArray(data.transactions)) {
-          setTransactions(data.transactions);
+        if (data.transactions) {
+          await importAllData(uid, data);
+          setTransactions(data.transactions || []);
           if (data.investments) setInvestments(data.investments);
           if (data.debts) setDebts(data.debts);
-        } else if (Array.isArray(data) && data.every(t => t.id && t.type && t.category)) {
-          setTransactions(data); // legacy format
+        } else if (Array.isArray(data)) {
+          setTransactions(data);
+          await saveTransactions(uid, data);
         } else {
           alert("Invalid file format.");
         }
@@ -899,6 +458,7 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
 
   const clearAllData = async () => {
     if (confirm("Are you sure you want to delete ALL data? This cannot be undone.")) {
+      await clearAllFirebase(uid);
       setTransactions([]); setInvestments([]); setDebts([]);
       setShowDataMenu(false);
     }
@@ -907,6 +467,7 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
   const resetToSample = async () => {
     if (confirm("Reset to sample data? Your current data will be replaced.")) {
       setTransactions(SAMPLE_DATA); setInvestments(SAMPLE_INVESTMENTS); setDebts(SAMPLE_DEBTS);
+      await importAllData(uid, { transactions: SAMPLE_DATA, investments: SAMPLE_INVESTMENTS, debts: SAMPLE_DEBTS });
       setShowDataMenu(false);
     }
   };
@@ -1061,7 +622,7 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", margin: 0, fontFamily: "'Space Mono', monospace" }}>
-                {user?.name ? `Hi, ${user.name}` : "Financial Tracker"}
+                {user?.displayName ? `Hi, ${user.displayName}` : user?.email ? `Hi, ${user.email.split("@")[0]}` : "Financial Tracker"}
               </p>
               <SyncBadge status={syncStatus} />
             </div>
@@ -1094,17 +655,16 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
                           background: "linear-gradient(135deg, rgba(167,139,250,0.3), rgba(129,140,248,0.3))",
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontSize: 13, fontWeight: 700, color: "#a78bfa",
-                        }}>{user?.name?.[0]?.toUpperCase() || "?"}</div>
+                        }}>{(user?.displayName || user?.email || "?")[0]?.toUpperCase()}</div>
                         <div>
-                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#fff" }}>{user?.name || "User"}</p>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#fff" }}>{user?.displayName || user?.email?.split("@")[0] || "User"}</p>
                           <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'Space Mono', monospace" }}>
-                            Since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}
+                            {user?.email || ""}
                           </p>
                         </div>
                       </div>
                     </div>
                     {[
-                      { label: "🔑 Change PIN", action: () => { onChangePin(); setShowDataMenu(false); } },
                       { label: "📤 Export JSON", action: exportData },
                       { label: "📥 Import JSON", action: importData },
                       { label: "🔄 Reset to samples", action: resetToSample },
@@ -1133,18 +693,7 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
                       }}
                         onMouseEnter={e => e.target.style.background = "rgba(255,255,255,0.06)"}
                         onMouseLeave={e => e.target.style.background = "transparent"}
-                      >🚪 Lock & Logout</button>
-                      <button onClick={() => { onDeleteAccount(); setShowDataMenu(false); }} style={{
-                        display: "block", width: "100%", textAlign: "left",
-                        background: "transparent", border: "none", borderRadius: 10,
-                        padding: "10px 12px", cursor: "pointer",
-                        color: "rgba(239,68,68,0.6)",
-                        fontSize: 12, fontFamily: "'DM Sans', sans-serif",
-                        transition: "background 0.15s",
-                      }}
-                        onMouseEnter={e => e.target.style.background = "rgba(255,255,255,0.06)"}
-                        onMouseLeave={e => e.target.style.background = "transparent"}
-                      >⚠ Delete Account</button>
+                      >🚪 Sign Out</button>
                     </div>
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "6px 12px" }}>
                       <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'Space Mono', monospace" }}>
@@ -2031,7 +1580,7 @@ function FinanceTracker({ user, onLogout, onChangePin, onDeleteAccount, changePi
       )}
 
       {/* Change PIN modal from auth */}
-      {changePinModal}
+      {/* Auth modals handled by AuthGate */}
 
       <style>{`
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.5); }
