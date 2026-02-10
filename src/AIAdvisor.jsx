@@ -61,9 +61,16 @@ export default function AIAdvisor({ financialData }) {
       const reply = await chatWithGemini(apiKey, newMessages, financialData);
       setMessages(prev => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
+      const isAllExhausted = err.message.includes("All models exhausted");
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `⚠️ **Error:** ${err.message}\n\n${err.message.includes("API key") ? "Your Gemini API key may be invalid. Click the key icon to update it." : "Please try again."}`,
+        content: `⚠️ **Error:** ${err.message}${
+          err.message.includes("API key")
+            ? "\n\nYour Gemini API key may be invalid. Click the 🔑 icon to update it."
+            : isAllExhausted
+              ? ""
+              : "\n\nPlease try again."
+        }`,
         isError: true,
       }]);
     }

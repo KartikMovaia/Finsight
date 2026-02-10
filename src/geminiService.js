@@ -1,7 +1,16 @@
 // ─── Gemini AI Service ───
-// Uses the Gemini API with the user's financial data as context
+// Uses the Gemini API with automatic model fallback
 
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+// Models to try in order — from newest to oldest, different quota pools
+const MODELS = [
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-1.5-pro",
+];
 
 function buildFinancialContext(data) {
   const { transactions, investments, debts, stats, portfolioStats, debtStats, netWorth, yearlyProjection } = data;
@@ -77,27 +86,9 @@ Rules:
 - You are NOT a certified financial advisor — remind them of this for major decisions
 - Never recommend specific stock picks — suggest categories/strategies instead`;
 
-export async function chatWithGemini(apiKey, messages, financialData) {
-  const context = buildFinancialContext(financialData);
-
-  const contents = [];
-
-  // Add system instruction + financial context as first user message context
-  const firstUserIdx = messages.findIndex(m => m.role === "user");
-
-  messages.forEach((msg, i) => {
-    const role = msg.role === "user" ? "user" : "model";
-    let text = msg.content;
-
-    // Inject financial context with the first user message
-    if (i === firstUserIdx) {
-      text = `[Financial Data Context]\n${context}\n\n[User Question]\n${text}`;
-    }
-
-    contents.push({ role, parts: [{ text }] });
-  });
-
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+async function tryModel(model, apiKey, contents) {
+  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -115,14 +106,55 @@ export async function chatWithGemini(apiKey, messages, financialData) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini API error: ${response.status}`);
+    const msg = err.error?.message || `${response.status}`;
+    const isQuota = response.status === 429 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit");
+    return { ok: false, isQuota, error: msg };
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) return { ok: false, isQuota: false, error: "Empty response" };
+  return { ok: true, text, model };
+}
 
-  if (!text) throw new Error("No response from Gemini");
-  return text;
+export async function chatWithGemini(apiKey, messages, financialData) {
+  const context = buildFinancialContext(financialData);
+  const contents = [];
+  const firstUserIdx = messages.findIndex(m => m.role === "user");
+
+  messages.forEach((msg, i) => {
+    const role = msg.role === "user" ? "user" : "model";
+    let text = msg.content;
+    if (i === firstUserIdx) {
+      text = `[Financial Data Context]\n${context}\n\n[User Question]\n${text}`;
+    }
+    contents.push({ role, parts: [{ text }] });
+  });
+
+  const errors = [];
+
+  for (const model of MODELS) {
+    console.log(`[Finsight AI] Trying ${model}...`);
+    const result = await tryModel(model, apiKey, contents);
+
+    if (result.ok) {
+      console.log(`[Finsight AI] ✓ Success with ${result.model}`);
+      return result.text;
+    }
+
+    errors.push(`${model}: ${result.error}`);
+    console.warn(`[Finsight AI] ✗ ${model} failed: ${result.error}`);
+
+    // Only try next model if it was a quota/rate limit issue
+    // For other errors (bad key, invalid request), stop immediately
+    if (!result.isQuota) {
+      throw new Error(result.error);
+    }
+  }
+
+  throw new Error(
+    `All models exhausted. This usually means the free tier isn't available in your region. Try enabling billing on Google Cloud (you can set a $0 budget).\n\nDetails:\n${errors.map(e => `• ${e}`).join("\n")}`
+  );
 }
 
 // ─── Quick Prompts ───
