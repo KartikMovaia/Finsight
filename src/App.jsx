@@ -8,6 +8,7 @@ import {
   exportAllData, importAllData,
   clearAllData as clearAllFirebase,
 } from "./dataService";
+import AIAdvisor from "./AIAdvisor";
 
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Investments", "Side Hustle", "Gifts", "Other Income"],
@@ -724,7 +725,7 @@ function FinanceTracker({ user, onLogout }) {
 
         {/* View Tabs */}
         <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: 4, overflowX: "auto" }}>
-          {["dashboard", "transactions", "investments", "debts", "projections"].map(tab => (
+          {["dashboard", "transactions", "investments", "debts", "projections", "ai advisor"].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               flex: 1, padding: "10px 6px", border: "none", borderRadius: 10, cursor: "pointer",
               background: activeTab === tab ? "rgba(167,139,250,0.15)" : "transparent",
@@ -1278,6 +1279,20 @@ function FinanceTracker({ user, onLogout }) {
               })()}
             </div>
           </div>
+        )}
+
+        {/* ===== AI ADVISOR ===== */}
+        {activeTab === "ai advisor" && (
+          <AIAdvisor financialData={{
+            transactions: filtered,
+            investments,
+            debts,
+            stats,
+            portfolioStats,
+            debtStats,
+            netWorth,
+            yearlyProjection,
+          }} />
         )}
       </div>
 
