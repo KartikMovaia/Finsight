@@ -1,15 +1,14 @@
 // ─── Gemini AI Service ───
 // Uses the Gemini API with automatic model fallback
 
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-
-// Models to try in order — from newest to oldest, different quota pools
+// Models to try in order — each with its correct API version
 const MODELS = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-1.5-pro",
+  { name: "gemini-2.0-flash", version: "v1beta" },
+  { name: "gemini-2.0-flash-lite", version: "v1beta" },
+  { name: "gemini-1.5-flash", version: "v1" },
+  { name: "gemini-1.5-flash-8b", version: "v1" },
+  { name: "gemini-1.5-pro", version: "v1" },
+  { name: "gemini-1.0-pro", version: "v1" },
 ];
 
 function buildFinancialContext(data) {
@@ -86,34 +85,46 @@ Rules:
 - You are NOT a certified financial advisor — remind them of this for major decisions
 - Never recommend specific stock picks — suggest categories/strategies instead`;
 
-async function tryModel(model, apiKey, contents) {
-  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+async function tryModel(model, version, apiKey, contents) {
+  const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${apiKey}`;
+  
+  // gemini-1.0-pro doesn't support system_instruction
+  const useSystemInstruction = !model.startsWith("gemini-1.0");
+  
+  const body = {
+    contents: useSystemInstruction ? contents : [
+      { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
+      { role: "model", parts: [{ text: "Understood. I'm Finsight AI, ready to help with your finances." }] },
+      ...contents,
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1024,
+      topP: 0.9,
+    },
+  };
+  
+  if (useSystemInstruction) {
+    body.system_instruction = { parts: [{ text: SYSTEM_PROMPT }] };
+  }
+
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: SYSTEM_PROMPT }]
-      },
-      contents,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-        topP: 0.9,
-      },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const msg = err.error?.message || `${response.status}`;
     const isQuota = response.status === 429 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit");
-    return { ok: false, isQuota, error: msg };
+    const isNotFound = response.status === 404 || msg.toLowerCase().includes("not found");
+    return { ok: false, isQuota, isNotFound, error: msg };
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) return { ok: false, isQuota: false, error: "Empty response" };
+  if (!text) return { ok: false, isQuota: false, isNotFound: false, error: "Empty response" };
   return { ok: true, text, model };
 }
 
@@ -133,9 +144,9 @@ export async function chatWithGemini(apiKey, messages, financialData) {
 
   const errors = [];
 
-  for (const model of MODELS) {
-    console.log(`[Finsight AI] Trying ${model}...`);
-    const result = await tryModel(model, apiKey, contents);
+  for (const { name: model, version } of MODELS) {
+    console.log(`[Finsight AI] Trying ${model} (${version})...`);
+    const result = await tryModel(model, version, apiKey, contents);
 
     if (result.ok) {
       console.log(`[Finsight AI] ✓ Success with ${result.model}`);
@@ -145,9 +156,9 @@ export async function chatWithGemini(apiKey, messages, financialData) {
     errors.push(`${model}: ${result.error}`);
     console.warn(`[Finsight AI] ✗ ${model} failed: ${result.error}`);
 
-    // Only try next model if it was a quota/rate limit issue
+    // Continue to next model if quota exceeded or model not found
     // For other errors (bad key, invalid request), stop immediately
-    if (!result.isQuota) {
+    if (!result.isQuota && !result.isNotFound) {
       throw new Error(result.error);
     }
   }
