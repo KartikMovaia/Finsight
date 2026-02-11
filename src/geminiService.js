@@ -131,9 +131,10 @@ async function tryModel(model, version, apiKey, contents) {
   return { ok: true, text, model };
 }
 
-export async function chatWithGemini(apiKey, messages, financialData, lang = "en") {
+export async function chatWithGemini(apiKey, messages, financialData, lang = "en", currencySymbol = "$") {
   const context = buildFinancialContext(financialData);
   const langInstruction = lang === "hi" ? "\n\nIMPORTANT: The user prefers Hindi (हिंदी). Always respond in Hindi. Use Devanagari script. You may use English for financial terms, tickers, and numbers." : "";
+  const currencyInstruction = `\n\nCurrency: Use the symbol "${currencySymbol}" for all monetary values.`;
   const contents = [];
   const firstUserIdx = messages.findIndex(m => m.role === "user");
 
@@ -141,7 +142,7 @@ export async function chatWithGemini(apiKey, messages, financialData, lang = "en
     const role = msg.role === "user" ? "user" : "model";
     let text = msg.content;
     if (i === firstUserIdx) {
-      text = `[Financial Data Context]\n${context}${langInstruction}\n\n[User Question]\n${text}`;
+      text = `[Financial Data Context]\n${context}${langInstruction}${currencyInstruction}\n\n[User Question]\n${text}`;
     }
     contents.push({ role, parts: [{ text }] });
   });

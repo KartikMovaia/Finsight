@@ -17,7 +17,7 @@ function formatMessage(text) {
 }
 
 export default function AIAdvisor({ financialData }) {
-  const { t, lang } = useLang();
+  const { t, lang, cur } = useLang();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,7 +60,7 @@ export default function AIAdvisor({ financialData }) {
     setLoading(true);
 
     try {
-      const reply = await chatWithGemini(apiKey, newMessages, financialData, lang);
+      const reply = await chatWithGemini(apiKey, newMessages, financialData, lang, cur.symbol);
       setMessages(prev => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
       const isAllExhausted = err.message.includes("All models exhausted");

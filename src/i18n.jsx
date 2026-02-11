@@ -1,6 +1,16 @@
 import { createContext, useContext, useState, useEffect } from "react";
 
 const LANG_KEY = "finsight-lang";
+const CURRENCY_KEY = "finsight-currency";
+
+const CURRENCIES = {
+  USD: { symbol: "$", code: "USD", name: "US Dollar", locale: "en-US" },
+  EUR: { symbol: "€", code: "EUR", name: "Euro", locale: "de-DE" },
+  INR: { symbol: "₹", code: "INR", name: "Indian Rupee", locale: "en-IN" },
+  PLN: { symbol: "zł", code: "PLN", name: "Polish Złoty", locale: "pl-PL" },
+  GBP: { symbol: "£", code: "GBP", name: "British Pound", locale: "en-GB" },
+  JPY: { symbol: "¥", code: "JPY", name: "Japanese Yen", locale: "ja-JP" },
+};
 
 const translations = {
   en: {
@@ -160,6 +170,7 @@ const translations = {
     invalidFileFormat: "Invalid file format.",
     couldNotReadFile: "Could not read file.",
     language: "🌐 Language",
+    currency: "💱 Currency",
 
     // ─── AI Advisor ───
     aiTitle: "Finsight AI",
@@ -347,6 +358,7 @@ const translations = {
     invalidFileFormat: "अमान्य फ़ाइल प्रारूप।",
     couldNotReadFile: "फ़ाइल पढ़ नहीं सकी।",
     language: "🌐 भाषा",
+    currency: "💱 मुद्रा",
 
     // ─── AI Advisor ───
     aiTitle: "Finsight AI",
@@ -385,10 +397,17 @@ export function LangProvider({ children }) {
   const [lang, setLang] = useState(() => {
     try { return localStorage.getItem(LANG_KEY) || "en"; } catch { return "en"; }
   });
+  const [currency, setCurrency] = useState(() => {
+    try { return localStorage.getItem(CURRENCY_KEY) || "USD"; } catch { return "USD"; }
+  });
 
   useEffect(() => {
     try { localStorage.setItem(LANG_KEY, lang); } catch {}
   }, [lang]);
+
+  useEffect(() => {
+    try { localStorage.setItem(CURRENCY_KEY, currency); } catch {}
+  }, [currency]);
 
   const t = (key) => {
     const keys = key.split(".");
@@ -399,8 +418,28 @@ export function LangProvider({ children }) {
     return val ?? translations.en[key] ?? key;
   };
 
+  const cur = CURRENCIES[currency] || CURRENCIES.USD;
+
+  const formatCurrency = (amount) => {
+    const abs = Math.abs(amount);
+    const sign = amount < 0 ? "-" : "";
+    const sym = cur.symbol;
+    // For JPY, no decimals needed
+    const decimals = currency === "JPY" ? 0 : 2;
+
+    if (abs >= 1000000) return sign + sym + (abs / 1000000).toFixed(1) + "M";
+    if (abs >= 100000) return sign + sym + (abs / 1000).toFixed(0) + "K";
+    if (abs >= 10000) return sign + sym + (abs / 1000).toFixed(1) + "K";
+    return sign + sym + abs.toFixed(decimals);
+  };
+
   return (
-    <LangContext.Provider value={{ lang, setLang, t, languages: { en: "English", hi: "हिंदी" } }}>
+    <LangContext.Provider value={{
+      lang, setLang, t,
+      languages: { en: "English", hi: "हिंदी" },
+      currency, setCurrency, formatCurrency,
+      currencies: CURRENCIES, cur,
+    }}>
       {children}
     </LangContext.Provider>
   );

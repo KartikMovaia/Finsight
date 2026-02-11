@@ -26,12 +26,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-const formatCurrency = (amount) => {
-  const abs = Math.abs(amount);
-  if (abs >= 1000000) return (amount < 0 ? "-" : "") + "$" + (abs / 1000000).toFixed(1) + "M";
-  if (abs >= 1000) return (amount < 0 ? "-" : "") + "$" + (abs / 1000).toFixed(1) + "K";
-  return "$" + amount.toFixed(2);
-};
+// formatCurrency is now provided by useLang() from i18n.jsx
 
 const SAMPLE_DATA = [
   { id: generateId(), type: "income", category: "Salary", amount: 5200, date: "2026-02-01", note: "Monthly salary" },
@@ -86,6 +81,7 @@ function Sparkline({ data, color, width = 120, height = 32 }) {
 
 // Donut chart
 function DonutChart({ data, size = 160 }) {
+  const { formatCurrency, t } = useLang();
   const total = data.reduce((s, d) => s + d.value, 0);
   if (total === 0) return <div style={{ width: size, height: size }} />;
   let cumulative = 0;
@@ -113,7 +109,7 @@ function DonutChart({ data, size = 160 }) {
         {formatCurrency(total)}
       </text>
       <text x={cx} y={cy + 14} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={11} fontFamily="'DM Sans', sans-serif">
-        total
+        {t("total")}
       </text>
     </svg>
   );
@@ -257,7 +253,7 @@ export default function App() {
 }
 
 function FinanceTracker({ user, onLogout }) {
-  const { t, lang, setLang, languages } = useLang();
+  const { t, lang, setLang, languages, formatCurrency, currency, setCurrency, currencies } = useLang();
   const [transactions, setTransactions] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [debts, setDebts] = useState([]);
@@ -709,6 +705,21 @@ function FinanceTracker({ user, onLogout }) {
                               color: lang === code ? "#a78bfa" : "rgba(255,255,255,0.4)",
                               fontSize: 11, fontWeight: 500, fontFamily: "'DM Sans', sans-serif",
                             }}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Currency Switcher */}
+                      <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{t("currency")}</span>
+                        <div style={{ display: "flex", gap: 4, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          {Object.entries(currencies).map(([code, info]) => (
+                            <button key={code} onClick={() => { setCurrency(code); setShowDataMenu(false); }} style={{
+                              padding: "4px 8px", borderRadius: 6, cursor: "pointer",
+                              background: currency === code ? "rgba(56,189,248,0.15)" : "rgba(255,255,255,0.04)",
+                              border: currency === code ? "1px solid rgba(56,189,248,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                              color: currency === code ? "#38bdf8" : "rgba(255,255,255,0.4)",
+                              fontSize: 10, fontWeight: 600, fontFamily: "'Space Mono', monospace",
+                            }}>{info.symbol} {code}</button>
                           ))}
                         </div>
                       </div>
@@ -1354,7 +1365,7 @@ function FinanceTracker({ user, onLogout }) {
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Amount</label>
               <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 20, fontWeight: 700 }}>$</span>
+                <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.3)", fontSize: 20, fontWeight: 700 }}>{currencies[currency]?.symbol || "$"}</span>
                 <input
                   type="number" step="0.01" placeholder="0.00" value={newTx.amount}
                   onChange={e => setNewTx(prev => ({ ...prev, amount: e.target.value }))}
