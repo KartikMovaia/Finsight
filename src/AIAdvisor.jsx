@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { chatWithGemini, QUICK_PROMPTS } from "./geminiService";
+import { useLang } from "./i18n.jsx";
 
 // Simple markdown-like formatting
 function formatMessage(text) {
@@ -16,6 +17,7 @@ function formatMessage(text) {
 }
 
 export default function AIAdvisor({ financialData }) {
+  const { t, lang } = useLang();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,7 +60,7 @@ export default function AIAdvisor({ financialData }) {
     setLoading(true);
 
     try {
-      const reply = await chatWithGemini(apiKey, newMessages, financialData);
+      const reply = await chatWithGemini(apiKey, newMessages, financialData, lang);
       setMessages(prev => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
       const isAllExhausted = err.message.includes("All models exhausted");
@@ -109,7 +111,7 @@ export default function AIAdvisor({ financialData }) {
           }}>🤖</div>
           <h3 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finsight AI Advisor</h3>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 20px", lineHeight: 1.6 }}>
-            Get personalized financial advice, savings plans, debt strategies, and budget recommendations — all based on your actual financial data.
+            {t("aiSetupDesc")}
           </p>
 
           <div style={{
@@ -132,7 +134,7 @@ export default function AIAdvisor({ financialData }) {
 
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              type="password" placeholder="Paste your Gemini API key"
+              type="password" placeholder={t("aiPasteKey")}
               value={tempKey} onChange={e => setTempKey(e.target.value)}
               onKeyDown={e => e.key === "Enter" && saveKey()}
               style={{ ...inputStyle, flex: 1, borderColor: "rgba(167,139,250,0.3)" }}
@@ -189,7 +191,7 @@ export default function AIAdvisor({ financialData }) {
         {messages.length === 0 ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 13, marginBottom: 20 }}>
-              Ask me anything about your finances, or try a quick prompt:
+              {t("aiEmptyState")}
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
               {QUICK_PROMPTS.map((qp, i) => (
@@ -249,7 +251,7 @@ export default function AIAdvisor({ financialData }) {
                   }} />
                 ))}
               </div>
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginLeft: 4 }}>Analyzing your finances…</span>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginLeft: 4 }}>{t("analyzing")}</span>
             </div>
           </div>
         )}
@@ -263,7 +265,7 @@ export default function AIAdvisor({ financialData }) {
       }}>
         <input
           ref={inputRef}
-          type="text" placeholder="Ask about your finances, set a goal, get advice…"
+          type="text" placeholder={t("askPlaceholder")}
           value={input} onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={loading}

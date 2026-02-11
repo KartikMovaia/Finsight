@@ -9,17 +9,19 @@ import {
   updateProfile,
   sendPasswordResetEmail,
 } from "firebase/auth";
+import { useLang } from "./i18n.jsx";
 
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState("login"); // login, signup
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const { t, lang, setLang, languages } = useLang();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -34,24 +36,15 @@ export default function AuthGate({ children }) {
     setError("");
     try {
       if (mode === "signup") {
-        if (!name.trim()) { setError("Please enter your name"); return; }
-        if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+        if (!name.trim()) { setError(t("enterNameError")); return; }
+        if (password.length < 6) { setError(t("passwordLengthError")); return; }
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name.trim() });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err) {
-      const map = {
-        "auth/email-already-in-use": "An account with this email already exists",
-        "auth/invalid-email": "Please enter a valid email address",
-        "auth/weak-password": "Password must be at least 6 characters",
-        "auth/user-not-found": "No account found with this email",
-        "auth/wrong-password": "Incorrect password",
-        "auth/invalid-credential": "Incorrect email or password",
-        "auth/too-many-requests": "Too many attempts. Please try again later",
-      };
-      setError(map[err.code] || err.message);
+      setError(t(`authErrors.${err.code}`) || err.message);
     }
   };
 
@@ -61,19 +54,19 @@ export default function AuthGate({ children }) {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       if (err.code !== "auth/popup-closed-by-user") {
-        setError("Google sign-in failed. Please try again.");
+        setError(t("googleSignInFailed"));
       }
     }
   };
 
   const handleReset = async () => {
     setError("");
-    if (!email) { setError("Enter your email first"); return; }
+    if (!email) { setError(t("enterEmailFirst")); return; }
     try {
       await sendPasswordResetEmail(auth, email);
       setResetSent(true);
     } catch {
-      setError("Could not send reset email. Check your address.");
+      setError(t("resetEmailError"));
     }
   };
 
@@ -119,8 +112,22 @@ export default function AuthGate({ children }) {
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           }}>Finsight</h1>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", margin: 0 }}>
-            {mode === "signup" ? "Create your account" : "Sign in to your account"}
+            {mode === "signup" ? t("createYourAccount") : t("signInToAccount")}
           </p>
+        </div>
+
+        {/* Language Switcher */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+          {Object.entries(languages).map(([code, label]) => (
+            <button key={code} onClick={() => setLang(code)} style={{
+              padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+              background: lang === code ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
+              border: lang === code ? "1px solid rgba(167,139,250,0.3)" : "1px solid rgba(255,255,255,0.08)",
+              color: lang === code ? "#a78bfa" : "rgba(255,255,255,0.4)",
+              fontSize: 12, fontWeight: 500, fontFamily: "'DM Sans', sans-serif",
+              transition: "all 0.2s",
+            }}>{label}</button>
+          ))}
         </div>
 
         {/* Google Button */}
@@ -146,7 +153,7 @@ export default function AuthGate({ children }) {
         {/* Divider */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "0.06em" }}>or</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{t("or")}</span>
           <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
         </div>
 
@@ -154,20 +161,20 @@ export default function AuthGate({ children }) {
         <form onSubmit={handleEmailAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {mode === "signup" && (
             <div>
-              <label style={labelStyle}>Name</label>
-              <input type="text" placeholder="Your name" value={name}
+              <label style={labelStyle}>{t("name")}</label>
+              <input type="text" placeholder={t("yourName")} value={name}
                 onChange={e => setName(e.target.value)}
                 style={inputStyle} />
             </div>
           )}
           <div>
-            <label style={labelStyle}>Email</label>
+            <label style={labelStyle}>{t("email")}</label>
             <input type="email" placeholder="you@example.com" value={email}
               onChange={e => { setEmail(e.target.value); setResetSent(false); }}
               style={inputStyle} autoComplete="email" />
           </div>
           <div>
-            <label style={labelStyle}>Password</label>
+            <label style={labelStyle}>{t("password")}</label>
             <div style={{ position: "relative" }}>
               <input type={showPassword ? "text" : "password"} placeholder="••••••••" value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -195,7 +202,7 @@ export default function AuthGate({ children }) {
           )}
 
           <button type="submit" style={btnStyle}>
-            {mode === "signup" ? "Create Account" : "Sign In"}
+            {mode === "signup" ? t("signUp") : t("signIn")}
           </button>
         </form>
 
@@ -203,16 +210,16 @@ export default function AuthGate({ children }) {
         <div style={{ marginTop: 16, textAlign: "center", display: "flex", flexDirection: "column", gap: 8 }}>
           {mode === "login" && (
             <button onClick={handleReset} style={linkStyle}>
-              Forgot password?
+              {t("forgotPassword")}
             </button>
           )}
           <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }} style={linkStyle}>
-            {mode === "login" ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+            {mode === "login" ? t("noAccount") : t("hasAccount")}
           </button>
         </div>
 
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", textAlign: "center", marginTop: 20, lineHeight: 1.6 }}>
-          Your data is stored securely in the cloud<br />and syncs across all your devices.
+        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", textAlign: "center", marginTop: 20, lineHeight: 1.6, whiteSpace: "pre-line" }}>
+          {t("cloudSyncNote")}
         </p>
       </div>
 

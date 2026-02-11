@@ -88,13 +88,13 @@ Rules:
 async function tryModel(model, version, apiKey, contents) {
   const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${apiKey}`;
   
-  // gemini-1.0-pro doesn't support system_instruction
-  const useSystemInstruction = !model.startsWith("gemini-1.0");
+  // Only v1beta models reliably support system_instruction
+  const useSystemInstruction = version === "v1beta";
   
   const body = {
     contents: useSystemInstruction ? contents : [
-      { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-      { role: "model", parts: [{ text: "Understood. I'm Finsight AI, ready to help with your finances." }] },
+      { role: "user", parts: [{ text: SYSTEM_PROMPT + "\n\nPlease confirm you understand these instructions." }] },
+      { role: "model", parts: [{ text: "Understood. I'm Finsight AI, your personal finance advisor. I have access to your financial data and I'm ready to help." }] },
       ...contents,
     ],
     generationConfig: {
@@ -117,19 +117,23 @@ async function tryModel(model, version, apiKey, contents) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const msg = err.error?.message || `${response.status}`;
-    const isQuota = response.status === 429 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit");
-    const isNotFound = response.status === 404 || msg.toLowerCase().includes("not found");
-    return { ok: false, isQuota, isNotFound, error: msg };
+    const msgLower = msg.toLowerCase();
+    const isQuota = response.status === 429 || msgLower.includes("quota") || msgLower.includes("limit");
+    const isNotFound = response.status === 404 || msgLower.includes("not found");
+    const isUnsupported = msgLower.includes("unknown name") || msgLower.includes("not supported") || msgLower.includes("invalid");
+    const isRetryable = isQuota || isNotFound || isUnsupported;
+    return { ok: false, isRetryable, error: msg };
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) return { ok: false, isQuota: false, isNotFound: false, error: "Empty response" };
+  if (!text) return { ok: false, isRetryable: true, error: "Empty response" };
   return { ok: true, text, model };
 }
 
-export async function chatWithGemini(apiKey, messages, financialData) {
+export async function chatWithGemini(apiKey, messages, financialData, lang = "en") {
   const context = buildFinancialContext(financialData);
+  const langInstruction = lang === "hi" ? "\n\nIMPORTANT: The user prefers Hindi (हिंदी). Always respond in Hindi. Use Devanagari script. You may use English for financial terms, tickers, and numbers." : "";
   const contents = [];
   const firstUserIdx = messages.findIndex(m => m.role === "user");
 
@@ -137,7 +141,7 @@ export async function chatWithGemini(apiKey, messages, financialData) {
     const role = msg.role === "user" ? "user" : "model";
     let text = msg.content;
     if (i === firstUserIdx) {
-      text = `[Financial Data Context]\n${context}\n\n[User Question]\n${text}`;
+      text = `[Financial Data Context]\n${context}${langInstruction}\n\n[User Question]\n${text}`;
     }
     contents.push({ role, parts: [{ text }] });
   });
@@ -156,9 +160,9 @@ export async function chatWithGemini(apiKey, messages, financialData) {
     errors.push(`${model}: ${result.error}`);
     console.warn(`[Finsight AI] ✗ ${model} failed: ${result.error}`);
 
-    // Continue to next model if quota exceeded or model not found
-    // For other errors (bad key, invalid request), stop immediately
-    if (!result.isQuota && !result.isNotFound) {
+    // Continue to next model if retryable (quota, not found, unsupported feature)
+    // For fatal errors (bad API key), stop immediately
+    if (!result.isRetryable) {
       throw new Error(result.error);
     }
   }

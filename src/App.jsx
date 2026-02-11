@@ -9,6 +9,7 @@ import {
   clearAllData as clearAllFirebase,
 } from "./dataService";
 import AIAdvisor from "./AIAdvisor";
+import { useLang } from "./i18n.jsx";
 
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Investments", "Side Hustle", "Gifts", "Other Income"],
@@ -256,6 +257,7 @@ export default function App() {
 }
 
 function FinanceTracker({ user, onLogout }) {
+  const { t, lang, setLang, languages } = useLang();
   const [transactions, setTransactions] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [debts, setDebts] = useState([]);
@@ -458,7 +460,7 @@ function FinanceTracker({ user, onLogout }) {
   };
 
   const clearAllData = async () => {
-    if (confirm("Are you sure you want to delete ALL data? This cannot be undone.")) {
+    if (confirm(t("deleteAllConfirm"))) {
       await clearAllFirebase(uid);
       setTransactions([]); setInvestments([]); setDebts([]);
       setShowDataMenu(false);
@@ -466,7 +468,7 @@ function FinanceTracker({ user, onLogout }) {
   };
 
   const resetToSample = async () => {
-    if (confirm("Reset to sample data? Your current data will be replaced.")) {
+    if (confirm(t("resetConfirm"))) {
       setTransactions(SAMPLE_DATA); setInvestments(SAMPLE_INVESTMENTS); setDebts(SAMPLE_DEBTS);
       await importAllData(uid, { transactions: SAMPLE_DATA, investments: SAMPLE_INVESTMENTS, debts: SAMPLE_DEBTS });
       setShowDataMenu(false);
@@ -666,10 +668,10 @@ function FinanceTracker({ user, onLogout }) {
                       </div>
                     </div>
                     {[
-                      { label: "📤 Export JSON", action: exportData },
-                      { label: "📥 Import JSON", action: importData },
-                      { label: "🔄 Reset to samples", action: resetToSample },
-                      { label: "🗑️ Clear all data", action: clearAllData, danger: true },
+                      { label: t("exportJson"), action: exportData },
+                      { label: t("importJson"), action: importData },
+                      { label: t("resetToSamples"), action: resetToSample },
+                      { label: t("clearAllData"), action: clearAllData, danger: true },
                     ].map((item, i) => (
                       <button key={i} onClick={item.action} style={{
                         display: "block", width: "100%", textAlign: "left",
@@ -694,11 +696,26 @@ function FinanceTracker({ user, onLogout }) {
                       }}
                         onMouseEnter={e => e.target.style.background = "rgba(255,255,255,0.06)"}
                         onMouseLeave={e => e.target.style.background = "transparent"}
-                      >🚪 Sign Out</button>
+                      >🚪 {t("signOut")}</button>
+                      {/* Language Switcher */}
+                      <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4, paddingTop: 10 }}>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{t("language")}</span>
+                        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                          {Object.entries(languages).map(([code, label]) => (
+                            <button key={code} onClick={() => { setLang(code); setShowDataMenu(false); }} style={{
+                              padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                              background: lang === code ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.04)",
+                              border: lang === code ? "1px solid rgba(167,139,250,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                              color: lang === code ? "#a78bfa" : "rgba(255,255,255,0.4)",
+                              fontSize: 11, fontWeight: 500, fontFamily: "'DM Sans', sans-serif",
+                            }}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "6px 12px" }}>
                       <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'Space Mono', monospace" }}>
-                        {transactions.length} records stored
+                        {transactions.length} {t("records")}
                       </span>
                     </div>
                   </div>
@@ -725,28 +742,35 @@ function FinanceTracker({ user, onLogout }) {
 
         {/* View Tabs */}
         <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: 4, overflowX: "auto" }}>
-          {["dashboard", "transactions", "investments", "debts", "projections", "ai advisor"].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{
+          {[
+            { key: "dashboard", label: t("dashboard") },
+            { key: "transactions", label: t("transactions") },
+            { key: "investments", label: t("investments") },
+            { key: "debts", label: t("debts") },
+            { key: "projections", label: t("projections") },
+            { key: "ai advisor", label: t("aiAdvisor") },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               flex: 1, padding: "10px 6px", border: "none", borderRadius: 10, cursor: "pointer",
-              background: activeTab === tab ? "rgba(167,139,250,0.15)" : "transparent",
-              color: activeTab === tab ? "#a78bfa" : "rgba(255,255,255,0.4)",
-              fontWeight: 600, fontSize: 12, textTransform: "capitalize", whiteSpace: "nowrap",
+              background: activeTab === tab.key ? "rgba(167,139,250,0.15)" : "transparent",
+              color: activeTab === tab.key ? "#a78bfa" : "rgba(255,255,255,0.4)",
+              fontWeight: 600, fontSize: 12, whiteSpace: "nowrap",
               transition: "all 0.2s", fontFamily: "'DM Sans', sans-serif",
-            }}>{tab}</button>
+            }}>{tab.label}</button>
           ))}
         </div>
 
         {/* Time Period Selector */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 3 }}>
-            {["daily", "monthly", "yearly"].map(v => (
-              <button key={v} onClick={() => setView(v)} style={{
+            {[{ key: "daily", label: t("daily") }, { key: "monthly", label: t("monthly") }, { key: "yearly", label: t("yearly") }].map(v => (
+              <button key={v.key} onClick={() => setView(v.key)} style={{
                 padding: "6px 14px", border: "none", borderRadius: 8, cursor: "pointer",
-                background: view === v ? "rgba(255,255,255,0.1)" : "transparent",
-                color: view === v ? "#fff" : "rgba(255,255,255,0.35)",
+                background: view === v.key ? "rgba(255,255,255,0.1)" : "transparent",
+                color: view === v.key ? "#fff" : "rgba(255,255,255,0.35)",
                 fontWeight: 500, fontSize: 12, fontFamily: "'DM Sans', sans-serif",
                 transition: "all 0.2s",
-              }}>{v}</button>
+              }}>{v.label}</button>
             ))}
           </div>
           {view === "daily" && (
@@ -771,9 +795,9 @@ function FinanceTracker({ user, onLogout }) {
             {/* Stats Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               {[
-                { label: "Income", value: stats.income, color: "#22c55e", icon: "↗" },
-                { label: "Expenses", value: stats.expense, color: "#ef4444", icon: "↙" },
-                { label: "Net", value: stats.net, color: stats.net >= 0 ? "#22c55e" : "#ef4444", icon: stats.net >= 0 ? "✦" : "▾" },
+                { label: t("income"), value: stats.income, color: "#22c55e", icon: "↗" },
+                { label: t("expenses"), value: stats.expense, color: "#ef4444", icon: "↙" },
+                { label: t("net"), value: stats.net, color: stats.net >= 0 ? "#22c55e" : "#ef4444", icon: stats.net >= 0 ? "✦" : "▾" },
               ].map((s, i) => (
                 <div key={i} style={{ ...cardStyle, padding: 16, position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", top: -10, right: -10, fontSize: 48, opacity: 0.05, fontWeight: 700 }}>{s.icon}</div>
@@ -789,14 +813,14 @@ function FinanceTracker({ user, onLogout }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               <div style={{ ...cardStyle, padding: 16, position: "relative", overflow: "hidden", background: "linear-gradient(135deg, rgba(167,139,250,0.08), rgba(129,140,248,0.04))", border: "1px solid rgba(167,139,250,0.15)" }}>
                 <div style={{ position: "absolute", top: -10, right: -10, fontSize: 48, opacity: 0.06, fontWeight: 700 }}>◈</div>
-                <p style={{ fontSize: 11, color: "rgba(167,139,250,0.7)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Net Worth</p>
+                <p style={{ fontSize: 11, color: "rgba(167,139,250,0.7)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("netWorth")}</p>
                 <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: netWorth >= 0 ? "#a78bfa" : "#ef4444", fontFamily: "'Space Mono', monospace" }}>
                   {formatCurrency(netWorth)}
                 </p>
               </div>
               <div onClick={() => setActiveTab("investments")} style={{ ...cardStyle, padding: 16, position: "relative", overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s" }}>
                 <div style={{ position: "absolute", top: -10, right: -10, fontSize: 48, opacity: 0.05, fontWeight: 700 }}>📈</div>
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Portfolio</p>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("portfolio")}</p>
                 <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#38bdf8", fontFamily: "'Space Mono', monospace" }}>
                   {formatCurrency(portfolioStats.totalValue)}
                 </p>
@@ -806,7 +830,7 @@ function FinanceTracker({ user, onLogout }) {
               </div>
               <div onClick={() => setActiveTab("debts")} style={{ ...cardStyle, padding: 16, position: "relative", overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s" }}>
                 <div style={{ position: "absolute", top: -10, right: -10, fontSize: 48, opacity: 0.05, fontWeight: 700 }}>💳</div>
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Debt</p>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("totalDebt")}</p>
                 <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: "#fb923c", fontFamily: "'Space Mono', monospace" }}>
                   {formatCurrency(debtStats.totalDebt)}
                 </p>
@@ -819,7 +843,7 @@ function FinanceTracker({ user, onLogout }) {
             {/* Trend Sparkline */}
             {view === "monthly" && dailyTrend.length > 0 && (
               <div style={cardStyle}>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 12px", fontWeight: 500 }}>Cumulative Cash Flow</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 12px", fontWeight: 500 }}>{t("cumulativeCashFlow")}</p>
                 <Sparkline data={dailyTrend} color="#a78bfa" width={800} height={48} />
               </div>
             )}
@@ -828,7 +852,7 @@ function FinanceTracker({ user, onLogout }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {/* Expense breakdown */}
               <div style={cardStyle}>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 16px", fontWeight: 500 }}>Expense Breakdown</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 16px", fontWeight: 500 }}>{t("expenseBreakdown")}</p>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
                   <DonutChart
                     data={categoryBreakdown.filter(c => c.type === "expense").map(c => ({ value: c.total, color: c.color }))}
@@ -850,7 +874,7 @@ function FinanceTracker({ user, onLogout }) {
 
               {/* Income breakdown */}
               <div style={cardStyle}>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 16px", fontWeight: 500 }}>Income Sources</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: "0 0 16px", fontWeight: 500 }}>{t("incomeSources")}</p>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
                   <DonutChart
                     data={categoryBreakdown.filter(c => c.type === "income").map(c => ({ value: c.total, color: c.color }))}
@@ -968,10 +992,10 @@ function FinanceTracker({ user, onLogout }) {
             {/* Portfolio Summary */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
               {[
-                { label: "Total Value", value: portfolioStats.totalValue, color: "#38bdf8" },
-                { label: "Total Cost", value: portfolioStats.totalCost, color: "rgba(255,255,255,0.5)" },
-                { label: "Total Gain/Loss", value: portfolioStats.totalGain, color: portfolioStats.totalGain >= 0 ? "#22c55e" : "#ef4444", prefix: portfolioStats.totalGain >= 0 ? "+" : "" },
-                { label: "Return %", value: null, display: `${portfolioStats.gainPct >= 0 ? "+" : ""}${portfolioStats.gainPct.toFixed(2)}%`, color: portfolioStats.gainPct >= 0 ? "#22c55e" : "#ef4444" },
+                { label: t("totalValue"), value: portfolioStats.totalValue, color: "#38bdf8" },
+                { label: t("totalCost"), value: portfolioStats.totalCost, color: "rgba(255,255,255,0.5)" },
+                { label: t("totalGainLoss"), value: portfolioStats.totalGain, color: portfolioStats.totalGain >= 0 ? "#22c55e" : "#ef4444", prefix: portfolioStats.totalGain >= 0 ? "+" : "" },
+                { label: t("returnPct"), value: null, display: `${portfolioStats.gainPct >= 0 ? "+" : ""}${portfolioStats.gainPct.toFixed(2)}%`, color: portfolioStats.gainPct >= 0 ? "#22c55e" : "#ef4444" },
               ].map((s, i) => (
                 <div key={i} style={{ ...cardStyle, padding: 16 }}>
                   <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</p>
@@ -988,11 +1012,11 @@ function FinanceTracker({ user, onLogout }) {
               borderRadius: 14, padding: "14px 0", cursor: "pointer", color: "#38bdf8",
               fontWeight: 600, fontSize: 14, fontFamily: "'DM Sans', sans-serif",
               transition: "all 0.2s",
-            }}>+ Add Investment</button>
+            }}>{t("addInvestment")}</button>
 
             {/* Holdings list */}
             <div style={cardStyle}>
-              <p style={{ fontSize: 14, fontWeight: 600, margin: "0 0 16px" }}>Holdings ({investments.length})</p>
+              <p style={{ fontSize: 14, fontWeight: 600, margin: "0 0 16px" }}>{t("holdings")} ({investments.length})</p>
               {investments.length === 0 && (
                 <p style={{ color: "rgba(255,255,255,0.3)", textAlign: "center", padding: 30, fontSize: 13 }}>No investments yet. Add your first holding above.</p>
               )}
@@ -1076,16 +1100,16 @@ function FinanceTracker({ user, onLogout }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
               {[
                 { label: "Total Debt", value: debtStats.totalDebt, color: "#fb923c" },
-                { label: "Monthly Minimum", value: debtStats.totalMinPayment, color: "#f87171" },
-                { label: "Avg Interest Rate", value: null, display: debtStats.avgRate.toFixed(2) + "%", color: "#facc15" },
-                { label: "Credit Utilization", value: null, display: debtStats.creditUsed.toFixed(0) + "%", color: debtStats.creditUsed > 30 ? "#ef4444" : "#22c55e" },
+                { label: t("monthlyMinimum"), value: debtStats.totalMinPayment, color: "#f87171" },
+                { label: t("avgInterestRate"), value: null, display: debtStats.avgRate.toFixed(2) + "%", color: "#facc15" },
+                { label: t("creditUtilization"), value: null, display: debtStats.creditUsed.toFixed(0) + "%", color: debtStats.creditUsed > 30 ? "#ef4444" : "#22c55e" },
               ].map((s, i) => (
                 <div key={i} style={{ ...cardStyle, padding: 16 }}>
                   <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 6px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</p>
                   <p style={{ fontSize: 20, fontWeight: 700, margin: 0, color: s.color, fontFamily: "'Space Mono', monospace" }}>
                     {s.display || formatCurrency(s.value)}
                   </p>
-                  {s.label === "Credit Utilization" && (
+                  {s.label === t("creditUtilization") && (
                     <MiniBar value={debtStats.creditUsed} max={100} color={debtStats.creditUsed > 30 ? "#ef4444" : "#22c55e"} />
                   )}
                 </div>
@@ -1098,7 +1122,7 @@ function FinanceTracker({ user, onLogout }) {
               borderRadius: 14, padding: "14px 0", cursor: "pointer", color: "#fb923c",
               fontWeight: 600, fontSize: 14, fontFamily: "'DM Sans', sans-serif",
               transition: "all 0.2s",
-            }}>+ Add Debt</button>
+            }}>{t("addDebt")}</button>
 
             {/* Debt list */}
             <div style={cardStyle}>
@@ -1310,7 +1334,7 @@ function FinanceTracker({ user, onLogout }) {
           }}>
             <div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.15)", borderRadius: 2, margin: "0 auto 20px" }} />
             <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700 }}>
-              {editingId ? "Edit Transaction" : "New Transaction"}
+              {editingId ? t("editTransaction") : t("newTransaction")}
             </h3>
 
             {/* Type Toggle */}
@@ -1400,7 +1424,7 @@ function FinanceTracker({ user, onLogout }) {
               boxShadow: (!newTx.category || !newTx.amount) ? "none" : "0 4px 20px rgba(167,139,250,0.3)",
               transition: "all 0.2s",
             }}>
-              {editingId ? "Update Transaction" : "Add Transaction"}
+              {editingId ? t("updateTransaction") : t("addTransaction")}
             </button>
           </div>
         </div>
@@ -1420,7 +1444,7 @@ function FinanceTracker({ user, onLogout }) {
           }}>
             <div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.15)", borderRadius: 2, margin: "0 auto 20px" }} />
             <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#38bdf8" }}>
-              {editingInvestId ? "Edit Investment" : "New Investment"}
+              {editingInvestId ? t("editInvestment") : t("newInvestment")}
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {/* Name */}
@@ -1488,7 +1512,7 @@ function FinanceTracker({ user, onLogout }) {
                 fontWeight: 700, fontSize: 16, fontFamily: "'DM Sans', sans-serif",
                 boxShadow: (!newInvest.name || !newInvest.type) ? "none" : "0 4px 20px rgba(56,189,248,0.3)",
                 transition: "all 0.2s",
-              }}>{editingInvestId ? "Update Investment" : "Add Investment"}</button>
+              }}>{editingInvestId ? t("updateInvestment") : t("addInvestment")}</button>
             </div>
           </div>
         </div>
@@ -1508,7 +1532,7 @@ function FinanceTracker({ user, onLogout }) {
           }}>
             <div style={{ width: 40, height: 4, background: "rgba(255,255,255,0.15)", borderRadius: 2, margin: "0 auto 20px" }} />
             <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: "#fb923c" }}>
-              {editingDebtId ? "Edit Debt" : "New Debt"}
+              {editingDebtId ? t("editDebt") : t("newDebt")}
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {/* Name */}
@@ -1585,7 +1609,7 @@ function FinanceTracker({ user, onLogout }) {
                 fontWeight: 700, fontSize: 16, fontFamily: "'DM Sans', sans-serif",
                 boxShadow: (!newDebt.name || !newDebt.type) ? "none" : "0 4px 20px rgba(251,146,60,0.3)",
                 transition: "all 0.2s",
-              }}>{editingDebtId ? "Update Debt" : "Add Debt"}</button>
+              }}>{editingDebtId ? t("updateDebt") : t("addDebt")}</button>
             </div>
           </div>
         </div>
