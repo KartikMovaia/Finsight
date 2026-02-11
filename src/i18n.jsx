@@ -10,7 +10,6 @@ const CURRENCIES = {
   PLN: { symbol: "zł", code: "PLN", name: "Polish Złoty", locale: "pl-PL" },
   GBP: { symbol: "£", code: "GBP", name: "British Pound", locale: "en-GB" },
   JPY: { symbol: "¥", code: "JPY", name: "Japanese Yen", locale: "ja-JP" },
-  HKD: { symbol: "HK$", code: "HKD", name: "Hong Kong Dollar", locale: "en-HK" },
 };
 
 const translations = {
