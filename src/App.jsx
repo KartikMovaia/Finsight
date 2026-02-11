@@ -283,26 +283,14 @@ function FinanceTracker({ user, onLogout }) {
   useEffect(() => {
     (async () => {
       const stored = await loadTransactions(uid);
-      if (stored && stored.length > 0) {
-        setTransactions(stored);
-      } else {
-        setTransactions(SAMPLE_DATA);
-        await saveTransactions(uid, SAMPLE_DATA);
-      }
+      setTransactions(stored && stored.length > 0 ? stored : []);
+
       const storedInv = await loadInvestments(uid);
-      if (storedInv && storedInv.length > 0) {
-        setInvestments(storedInv);
-      } else {
-        setInvestments(SAMPLE_INVESTMENTS);
-        await saveInvestments(uid, SAMPLE_INVESTMENTS);
-      }
+      setInvestments(storedInv && storedInv.length > 0 ? storedInv : []);
+
       const storedDebt = await loadDebts(uid);
-      if (storedDebt && storedDebt.length > 0) {
-        setDebts(storedDebt);
-      } else {
-        setDebts(SAMPLE_DEBTS);
-        await saveDebts(uid, SAMPLE_DEBTS);
-      }
+      setDebts(storedDebt && storedDebt.length > 0 ? storedDebt : []);
+
       const settings = await loadSettings(uid);
       if (settings) {
         if (settings.view) setView(settings.view);
